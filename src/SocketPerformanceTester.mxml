@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009" 
+					   xmlns:s="library://ns.adobe.com/flex/spark"
+					   showStatusBar="false"
+					   windowComplete="windowedapplication1_windowCompleteHandler(event)">
+	<fx:Declarations>
+		
+	</fx:Declarations>
+	<s:layout>
+		<s:VerticalLayout paddingBottom="10" paddingLeft="10" paddingTop="10" paddingRight="10" gap="15"/>
+	</s:layout>
+	<s:HGroup width="100%" verticalAlign="middle">
+		<s:Label text="服务器地址："/>
+		<s:TextInput id="serverTI" width="100%" prompt="形如：127.0.0.1:8080" text="10.0.8.8:2300"/>
+		<s:Button id="connectBTN" label="连接" click="connectBTN_clickHandler(event)"/>
+		<s:Button id="disconnBTN" label="断开" click="disconnBTN_clickHandler(event)"/>
+	</s:HGroup>
+	<s:HGroup width="100%" verticalAlign="middle">
+		<s:Label id="resultLabel" width="100%"/>
+	</s:HGroup>
+	<s:HGroup width="100%" verticalAlign="middle">
+		<s:Label text="连接数量"/>
+		<s:NumericStepper id="numNS" width="60" maximum="10000" minimum="1"/>
+		<s:Label text="数据包大小(字节)"/>
+		<s:NumericStepper id="packetNS" width="80" maximum="100000" minimum="10"/>
+		<s:Button id="sendBTN" label="发送" click="sendBTN_clickHandler(event)" enabled="false"/>
+	</s:HGroup>
+	<s:HGroup width="100%" verticalAlign="middle">
+		<s:Label text="间隔:"/>
+		<s:NumericStepper id="timeNS" width="60" maximum="10000"  minimum="0" />
+		<s:Button id="clearLogBTN" label="清空Log" click="clearLogBTN_clickHandler(event)"/>
+		<s:Button id="openLogDirBTN" label="打开Log文件夹" click="File.applicationStorageDirectory.openWithDefaultApplication();"/>	
+		<s:Button id="openLogBTN" label="打开log" click="openLogBTN_clickHandler(event)"/>	
+	</s:HGroup>
+	<fx:Script>
+	<![CDATA[
+		import flash.utils.clearTimeout;
+		import flash.utils.getTimer;
+		import flash.utils.setTimeout;
+		
+		import mx.events.AIREvent;
+		import mx.rpc.mxml.Concurrency;
+		private var _sockets:Vector.<Conn>;
+		private var _logFile:File;
+		private var _logStream:FileStream;
+		private var _msg:String;
+		private var _timer:Timer;
+		private var _connSuccess:int=0;
+		private var _timeoutid:int;
+		
+		protected function windowedapplication1_windowCompleteHandler(event:AIREvent):void
+		{
+			_sockets = new Vector.<Conn>;
+			_timer = new Timer(2000);
+			_timer.addEventListener(TimerEvent.TIMER, handler_timer);
+			_timer.start();
+			this.title = 'Socket性能测试 v' + getDesc('versionNumber');
+			_msg = '';
+			_connSuccess = 0;
+		}
+		
+		private function connect($server:String, $port:int):void
+		{
+			if(int(timeNS.value)==0)
+			{
+				var __num:int = numNS.value;
+				for(var i:int=0;i<__num;i++)
+				{
+					connectToAServer($server, $port);
+				}
+			}
+			else
+			{
+				if(_sockets && _sockets.length<int(numNS.value))
+				{
+					connectToAServer($server, $port);
+					_timeoutid = setTimeout(connect, int(timeNS.value), $server, $port);
+				}
+			}
+			
+		}
+		
+		private function connectToAServer($server:String, $port:int):void
+		{
+			var __socket:Conn = new Conn(_sockets.length);
+			__socket.addEventListener(Event.CONNECT, handler_connect);
+			__socket.addEventListener(Event.CLOSE, handler_close);
+			__socket.addEventListener(SecurityErrorEvent.SECURITY_ERROR, handler_securityError);
+			__socket.addEventListener(IOErrorEvent.IO_ERROR, handler_ioError);
+			__socket.addEventListener(ProgressEvent.SOCKET_DATA, handler_data);
+			__socket.connect($server, $port);
+			_sockets[_sockets.length] = __socket;
+		}
+		private function showInfo(...$msg):void
+		{
+			for each(var __amsg:String in $msg)
+			{
+				_msg += __amsg +' ';
+			}
+			if(_msg) _msg += File.lineEnding;
+		}
+		
+		private function handler_timer(evt:TimerEvent):void
+		{
+			//每2000毫秒写入一次log，避免写操作过于频繁
+			if(_msg)
+			{
+				_logStream.open(_logFile, FileMode.APPEND);
+				_logStream.writeUTFBytes(_msg);
+				_logStream.close();
+				_msg = '';
+			}
+		}
+		
+		protected function connectBTN_clickHandler(event:MouseEvent):void
+		{
+			if(serverTI.text)
+			{
+				var __sp:Array = serverTI.text.split(':');
+				if(__sp.length!=2) return;
+				connect(__sp[0], int(__sp[1]));
+				connectBTN.enabled = false;
+				_logFile = File.applicationStorageDirectory.resolvePath('log'+getTimer()+'.txt');
+				_logStream = new FileStream();
+			}
+		}
+		
+		protected function disconnBTN_clickHandler(event:MouseEvent):void
+		{
+			if(!_sockets || _sockets.length==0) return;
+			connectBTN.enabled = true;
+			sendBTN.enabled = false;
+			_logStream = null;
+			_logFile = null;
+			_connSuccess = 0;
+			_msg = '';
+			resultLabel.text = '';
+			clearTimeout(_timeoutid);
+			var __socket:Socket = null;
+			while(_sockets.length>0)
+			{
+				__socket = _sockets.pop();
+				if(__socket.connected) __socket.close();
+				__socket.removeEventListener(Event.CONNECT, handler_connect);
+				__socket.removeEventListener(Event.CLOSE, handler_close);
+				__socket.removeEventListener(SecurityErrorEvent.SECURITY_ERROR, handler_securityError);
+				__socket.removeEventListener(IOErrorEvent.IO_ERROR, handler_ioError);
+				__socket.removeEventListener(ProgressEvent.SOCKET_DATA, handler_data);
+			}
+		}
+		
+		private function handler_ioError(evt:IOErrorEvent):void
+		{
+			var __socket:Conn = evt.currentTarget as Conn;
+			connectBTN.enabled = true;
+			showInfo('Socket'+__socket.sid+' IO错误：',evt.text);
+		}
+		
+		private function handler_connect(evt:Event):void
+		{
+			var __socket:Conn = evt.currentTarget as Conn;
+			if (__socket.connected) 
+			{
+				showInfo('连接Socket'+__socket.sid+'服务器成功！');
+				_connSuccess ++;
+				resultLabel.text = '连接成功数量:'+_connSuccess;
+				
+			} 
+			else 
+			{
+				showInfo('连接Socket'+__socket.sid+'服务器失败。');
+			}
+			if(_connSuccess == int(numNS.value))
+			{
+				connectBTN.enabled = false;
+				sendBTN.enabled = true;
+			}
+		}
+		
+		private function handler_close(evt:Event):void
+		{
+			var __socket:Conn = evt.currentTarget as Conn;
+			showInfo('Socket'+__socket.sid+'关闭：已经断开与服务器的连接。');
+		}
+		
+		private function handler_securityError(evt:SecurityErrorEvent):void
+		{
+			var __socket:Conn = evt.currentTarget as Conn;
+			showInfo('Socket'+__socket.sid+'安全错误：', evt.text);
+		}
+		
+		private function handler_data(evt:ProgressEvent):void
+		{
+			var __socket:Conn = evt.currentTarget as Conn;
+			var __data:ByteArray = new ByteArray();
+			__socket.readBytes(__data);
+			showInfo('收到Socket'+__socket.sid+'服务器消息,长度:', __data.length);
+		}
+		
+		protected function clearLogBTN_clickHandler(event:MouseEvent):void
+		{
+			var __logs:Array = File.applicationStorageDirectory.getDirectoryListing();
+			for(var i:int=0;i<__logs.length;i++)
+			{
+				File(__logs[i]).deleteFile();
+			}
+		}
+		
+		protected function sendBTN_clickHandler(event:MouseEvent):void
+		{
+			var __num:int = packetNS.value/8;
+			var __ba:ByteArray = new ByteArray();
+			var i:int=0;
+			for(i=0;i<__num;i++)
+			{
+				__ba.writeDouble(1.0);
+			}
+			__ba.position = 0;
+			for(i=0;i<_sockets.length;i++)
+			{
+				_sockets[i].writeBytes(__ba);
+				_sockets[i].flush();
+			}
+		}
+		
+		public function getDesc($name:String):String
+		{
+			var __desc:XML = NativeApplication.nativeApplication.applicationDescriptor;
+			var __ns:Namespace = __desc.namespace();
+			return __desc.__ns::[$name];
+		}
+		
+		protected function openLogBTN_clickHandler(event:MouseEvent):void
+		{
+			if(_logFile && _logFile.exists)	_logFile.openWithDefaultApplication()
+		}
+		
+	]]>
+	</fx:Script>
+</s:WindowedApplication>
