@@ -2,32 +2,41 @@
 <s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009" 
 					   xmlns:s="library://ns.adobe.com/flex/spark"
 					   showStatusBar="false"
-					   windowComplete="windowedapplication1_windowCompleteHandler(event)">
-	<fx:Declarations>
-		
-	</fx:Declarations>
+					   windowComplete="handler_init(event)">
 	<s:layout>
 		<s:VerticalLayout paddingBottom="10" paddingLeft="10" paddingTop="10" paddingRight="10" gap="15"/>
 	</s:layout>
-	<s:HGroup width="100%" verticalAlign="middle">
-		<s:Label text="服务器地址："/>
-		<s:TextInput id="serverTI" width="100%" prompt="形如：127.0.0.1:8080" text="10.0.8.8:2300"/>
-		<s:Button id="connectBTN" label="连接" click="connectBTN_clickHandler(event)"/>
-		<s:Button id="disconnBTN" label="断开" click="disconnBTN_clickHandler(event)"/>
-	</s:HGroup>
+	<fx:Style source="SocketPerformanceTester.css"/>
+	<s:VGroup width="100%" verticalAlign="middle">
+		<s:HGroup width="100%" verticalAlign="middle">
+			<s:Label text="服务器地址："/>
+			<s:TextInput id="serverTI" width="100%" prompt="形如：127.0.0.1:8080" text="127.0.0.1:8050"/>
+		</s:HGroup>
+		<s:HGroup width="100%" verticalAlign="middle">
+			<s:Label text="连接数量"/>
+			<s:NumericStepper id="numNS" width="100%" maximum="10000" minimum="1" maxChars="5"/>
+			<s:Label text="间隔:"/>
+			<s:NumericStepper id="timeNS" width="100%" maximum="10000"  minimum="0" />
+			<s:Button id="connectBTN" label="连接" click="connectBTN_clickHandler(event)"/>
+			<s:Button id="disconnBTN" label="断开" click="disconnBTN_clickHandler(event)"/>
+		</s:HGroup>
+	</s:VGroup>
 	<s:HGroup width="100%" verticalAlign="middle">
 		<s:Label id="resultLabel" width="100%"/>
 	</s:HGroup>
+	<s:VGroup width="100%">
+		<s:HGroup width="100%" verticalAlign="middle">
+			<s:DropDownList id="sendTypeDDL" requireSelection="true">
+				<s:ArrayList>
+					<fx:String>自定义数据包</fx:String>
+					<fx:String>指定数据包大小</fx:String>
+				</s:ArrayList>
+			</s:DropDownList>
+			<s:TextInput id="packetTI" width="100%" toolTip="{sendTypeDDL.selectedIndex==0?SEND_INFO0:SEND_INFO1}"/>
+			<s:Button id="sendBTN" label="发送" click="sendBTN_clickHandler(event)" enabled="false"/>
+		</s:HGroup>
+	</s:VGroup>
 	<s:HGroup width="100%" verticalAlign="middle">
-		<s:Label text="连接数量"/>
-		<s:NumericStepper id="numNS" width="60" maximum="10000" minimum="1"/>
-		<s:Label text="数据包大小(字节)"/>
-		<s:NumericStepper id="packetNS" width="80" maximum="100000" minimum="10"/>
-		<s:Button id="sendBTN" label="发送" click="sendBTN_clickHandler(event)" enabled="false"/>
-	</s:HGroup>
-	<s:HGroup width="100%" verticalAlign="middle">
-		<s:Label text="间隔:"/>
-		<s:NumericStepper id="timeNS" width="60" maximum="10000"  minimum="0" />
 		<s:Button id="clearLogBTN" label="清空Log" click="clearLogBTN_clickHandler(event)"/>
 		<s:Button id="openLogDirBTN" label="打开Log文件夹" click="File.applicationStorageDirectory.openWithDefaultApplication();"/>	
 		<s:Button id="openLogBTN" label="打开log" click="openLogBTN_clickHandler(event)"/>	
@@ -48,7 +57,11 @@
 		private var _connSuccess:int=0;
 		private var _timeoutid:int;
 		
-		protected function windowedapplication1_windowCompleteHandler(event:AIREvent):void
+		private var _sendReg:RegExp = /((n\d+|b\d{3}|i\d+|s\[^,]+|u\d+),)*(n\d+|b\d{3}|i\d+|s[^,]+|u\d+)$/g;
+		private static const SEND_INFO0:String = '按以下规则输入：\ns字符串,b字节,i长整数,u无符号整形,n短整形。例如:\nn1000,b1,i65555,s你懂的';
+		private static const SEND_INFO1:String = '直接输入数字（代表字节大小）;';
+		
+		protected function handler_init(event:AIREvent):void
 		{
 			_sockets = new Vector.<Conn>;
 			_timer = new Timer(2000);
@@ -208,12 +221,61 @@
 		
 		protected function sendBTN_clickHandler(event:MouseEvent):void
 		{
-			var __num:int = packetNS.value/8;
 			var __ba:ByteArray = new ByteArray();
-			var i:int=0;
-			for(i=0;i<__num;i++)
+			__ba.endian = Endian.LITTLE_ENDIAN;
+			resultLabel.text = '';
+			var __input:String = packetTI.text;
+			if(sendTypeDDL.selectedIndex == 0)
 			{
-				__ba.writeDouble(1.0);
+				trace('测试字符串:', __input);
+				if(_sendReg.test(__input))
+				{
+					var __arr:Array = __input.split(',');
+					var __str:String = '';
+					for (var i:int = 0; i < __arr.length; i++) 
+					{
+						__str = String(__arr[i]);
+						var __type:String = __str.slice(0,1);
+						var __value:String = __str.slice(1, __str.length);
+						trace('写入：', __type, __value);
+						switch(__type)
+						{
+							case 's':
+								__ba.writeUTF(String(__value));
+								break;
+							case 'u':
+								__ba.writeUnsignedInt(uint(__value));
+								break;
+							case 'n':
+								__ba.writeShort(int(__value));
+								break;
+							case 'i':
+								__ba.writeInt(int(__value));
+								break;
+							case 'b':
+								__ba.writeByte(int(__value));
+								break;
+						}
+					}
+				}
+				else
+				{
+					resultLabel.text = '要发送的数据不符合规则';
+					return;
+				}
+			}
+			else
+			{
+				var __num:Number = parseInt(__input)/8;
+				if(isNaN(__num))
+				{
+					resultLabel.text = '输入的不是数字';
+					return;
+				}
+				for(var j:int=0;j<__num;j++)
+				{
+					__ba.writeDouble(1.0);
+				}
 			}
 			__ba.position = 0;
 			for(i=0;i<_sockets.length;i++)
@@ -221,6 +283,7 @@
 				_sockets[i].writeBytes(__ba);
 				_sockets[i].flush();
 			}
+			packetTI.text = '';
 		}
 		
 		public function getDesc($name:String):String
