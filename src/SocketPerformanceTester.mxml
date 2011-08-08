@@ -33,7 +33,7 @@
 				</s:ArrayList>
 			</s:DropDownList>
 			<s:Spacer width="100%" height="20"/>
-			<s:TextInput id="maskBaseTI" text="59" enabled="{sendTypeDDL.selectedIndex==0}" toolTip="以十六进制格式输入掩码基数，不要加0x前缀。例如：AF" maxChars="4"/>
+			<s:TextInput id="maskBaseTI" text="0x59" enabled="{sendTypeDDL.selectedIndex==0}" toolTip="以十进制或十六进制格式输入掩码基数，十六进制需要加0x前缀。例如：0xAF" maxChars="4"/>
 			<s:Button id="buildMaskBTN" label="生成掩码" enabled="{sendTypeDDL.selectedIndex==0}" click="handler_buildMaskBTNclick(event)"/>
 		</s:HGroup>
 		<s:HGroup width="100%" verticalAlign="middle">
@@ -62,8 +62,8 @@
 		private var _connSuccess:int=0;
 		private var _timeoutid:int;
 		
-		private var _sendReg:RegExp = /^((n-?\d+|b-?\d{1,3}|i-?\d+|s[^,]+|u\d+),)*(n-?\d+|b-?\d{1,3}|i-?\d+|s[^,]+|u\d+)$/g;
-		private static const SEND_INFO0:String = '按以下规则输入：\ns字符串,b字节,i32位整数,u32位无符号整数,n16位整数。例如:\nn1000,b-1,i65555,s你懂的';
+		private var _sendReg:RegExp = /^((n-?\d+|b-?\w{1,4}|i-?\d+|s[^,]+|u\d+),)*(n-?\d+|b-?\w{1,4}|i-?\d+|s[^,]+|u\d+)$/g;
+		private static const SEND_INFO0:String = '按以下规则输入：\nb字节,n16位整数,i32位整数,u32位无符号整数,s字符串。\n只有b类型支持16进制。16进制请输入0x前缀。\n例如:n1000,b-1,i65555,s你懂的';
 		private static const SEND_INFO1:String = '直接输入数字（代表字节大小）;';
 		
 		protected function handler_init(event:AIREvent):void
@@ -285,7 +285,7 @@
 								__ba.writeInt(int(__value));
 								break;
 							case 'b':
-								__ba.writeByte(int(__value));
+								__ba.writeByte(parseInt(__value));
 								break;
 						}
 					}
@@ -332,9 +332,16 @@
 		
 		protected function handler_buildMaskBTNclick($event:MouseEvent):void
 		{
-			var __maskBase:Number = parseInt(maskBaseTI.text, 16);
+			resultLabel.text = '';
+			var __maskBase:Number = parseInt(maskBaseTI.text);
+			if(isNaN(__maskBase))
+			{
+				resultLabel.text = '输入的必须是十进制或者十六进制数字。';
+				return;
+			}
 			var __maskCode:* = getRandom(10000) & __maskBase;
-			var __append:String = (packetTI.text? ',b':'b')+__maskCode.toString(16);
+			var __append:String = (packetTI.text? ',b0x':'b0x')+__maskCode.toString(16);
+			trace(__maskBase, __maskBase.toString(16), __maskCode, __maskCode.toString(16));
 			packetTI.appendText(__append);
 		}
 	]]>
