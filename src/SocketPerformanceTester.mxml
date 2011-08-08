@@ -26,14 +26,15 @@
 	</s:HGroup>
 	<s:VGroup width="100%">
 		<s:HGroup width="100%" verticalAlign="middle">
-			<s:TextInput id="maskBaseTI" text="59" toolTip="以十六进制格式输入掩码基数，不要加0x前缀。例如：AF" maxChars="4"/>
-			<s:Button id="buildMaskBTN" label="生成掩码" click="handler_buildMaskBTNclick(event)"/>
-			<s:DropDownList id="sendTypeDDL" requireSelection="true">
+			<s:DropDownList id="sendTypeDDL" requireSelection="true" width="130">
 				<s:ArrayList>
 					<fx:String>自定义数据包</fx:String>
 					<fx:String>指定数据包大小</fx:String>
 				</s:ArrayList>
 			</s:DropDownList>
+			<s:Spacer width="100%" height="20"/>
+			<s:TextInput id="maskBaseTI" text="59" enabled="{sendTypeDDL.selectedIndex==0}" toolTip="以十六进制格式输入掩码基数，不要加0x前缀。例如：AF" maxChars="4"/>
+			<s:Button id="buildMaskBTN" label="生成掩码" enabled="{sendTypeDDL.selectedIndex==0}" click="handler_buildMaskBTNclick(event)"/>
 		</s:HGroup>
 		<s:HGroup width="100%" verticalAlign="middle">
 			<s:TextInput id="packetTI" width="100%" toolTip="{sendTypeDDL.selectedIndex==0?SEND_INFO0:SEND_INFO1}"/>
